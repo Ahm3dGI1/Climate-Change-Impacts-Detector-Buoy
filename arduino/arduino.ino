@@ -3,19 +3,27 @@
 #include <DHT.h>  // Including library for dht
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
 
 #define  CHANNEL_ID 1950802
 #define  CHANNEL_API_KEY "J5FLXJ9BGS2B2YLN"
- 
+//Network Credentials 
 const char *ssid =  "unknown";
 const char *pass =  "1111g4444";
 const char* server = "api.thingspeak.com";
-
+//Temprature
 float tempwater;
 float tempair;
 float pH = 8.1;
 float level = 9.2;
-
+//pH
+float calibration_value = 21.34 - 0.7;
+int phval = 0; 
+unsigned long int avgval; 
+int buffer_arr[10],temp;
+float ph_act;
+//Correlation
  double sumAirTemp = 0;
  double sumWaterTemp = 0;
  double sumPh = 0;
@@ -28,8 +36,9 @@ float level = 9.2;
  double co2 = 0;
  double counter = 0;
  
-#define DHTPIN 14
-//pin where the dht11 is connected
+#define DHTPIN 14 //DHT pin
+
+#define IRPIN 32 //IR pin
  
 DHT dht(DHTPIN, DHT11);
 
@@ -47,6 +56,7 @@ DallasTemperature sensors(&oneWire);
 void setup() 
 {
        Serial.begin(115200);
+       Wire.begin();
        //delay(10);
        dht.begin();
 
@@ -73,11 +83,22 @@ void setup()
 void loop() 
 {
           counter++;
-          
+
+          //IR Code
+          float volts = analogRead(sensor)*0.0048828125;  // value from sensor * (5/1024)
+          int distance = 13*pow(volts, -1); // worked out from datasheet graph
+          delay(1000); // slow down serial port 
+  
+          if (distance <= 30){
+            Serial.print("Sea Level: ");
+            Serial.println(distance);   // print the distance
+          }
+
+          //Temprature
           tempair = dht.readTemperature();
 
-              Serial.println("ºC");
-      sensors.requestTemperatures(); 
+          Serial.println("ºC");
+          sensors.requestTemperatures(); 
           tempwater = sensors.getTempCByIndex(0);
           pH = 8.3 - ((tempwater-20) * (8.1/400));
           level = 8+((tempair - 24)*0.11388893);
@@ -86,6 +107,31 @@ void loop()
           Serial.print(tempwater);
           Serial.println("ºC");
 
+          //pH
+          for(int i=0;i<10;i++) { 
+            buffer_arr[i]=analogRead(32);
+            delay(30);
+          }
+          for(int i=0;i<9;i++){
+            for(int j=i+1;j<10;j++){
+              if(buffer_arr[i]>buffer_arr[j]){
+                temp=buffer_arr[i];
+                buffer_arr[i]=buffer_arr[j];
+                buffer_arr[j]=temp;
+              }
+            }
+          }
+          avgval=0;
+          for(int i=2;i<8;i++)
+            avgval+=buffer_arr[i];
+          float volt=(float)avgval*5.0/1024/6; 
+          ph_act = -5.70 * volt + calibration_value;
+
+          Serial.print("pH Val: ");
+          Serial.println(ph_act);
+          delay(1000);
+
+          //Correlation
           sumAirTemp += tempair;
           sumWaterTemp += tempwater;
           sumPh += pH;
@@ -98,7 +144,8 @@ void loop()
 
           co1 = (float)(counter * (sumWaterTemp*sumPh) - sumWaterTemp * sumPh)
                   / sqrt((counter * sumWaterTempSqr- (sumWaterTemp * sumWaterTemp)) * (counter * sumPhSqr - (sumPh * sumPh)));
-           
+
+          //ThingSpeak 
           ThingSpeak.setField(1, tempair);
           ThingSpeak.setField(2, pH);
           ThingSpeak.setField(3, level);
