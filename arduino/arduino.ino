@@ -38,7 +38,7 @@ float ph_act;
  
 #define DHTPIN 14 //DHT pin
 
-#define IRPIN 32 //IR pin
+#define IRPIN 18 //IR pin
  
 DHT dht(DHTPIN, DHT11);
 
